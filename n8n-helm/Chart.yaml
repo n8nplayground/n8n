@@ -1,0 +1,4 @@
+apiVersion: v2
+name: n8n-stack
+description: A Helm chart for n8n with PostgreSQL
+version: 0.1.0

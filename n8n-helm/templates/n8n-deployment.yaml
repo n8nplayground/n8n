@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: n8n
+  template:
+    metadata:
+      labels:
+        app: n8n
+    spec:
+      containers:
+        - name: n8n
+          image: "{{ .Values.n8n.image }}:{{ .Values.n8n.tag }}"
+          ports:
+            - containerPort: {{ .Values.n8n.port }}
+          env:
+            - name: DB_TYPE
+              value: postgresdb
+            - name: DB_POSTGRESDB_HOST
+              value: postgres
+            - name: DB_POSTGRESDB_PORT
+              value: "{{ .Values.postgres.port }}"
+            - name: DB_POSTGRESDB_DATABASE
+              value: "{{ .Values.postgres.db }}"
+            - name: DB_POSTGRESDB_USER
+              value: "{{ .Values.postgres.user }}"
+            - name: DB_POSTGRESDB_PASSWORD
+              value: "{{ .Values.postgres.password }}"
+            - name: N8N_BASIC_AUTH_ACTIVE
+              value: "true"
+            - name: N8N_BASIC_AUTH_USER
+              value: "{{ .Values.n8n.username }}"
+            - name: N8N_BASIC_AUTH_PASSWORD
+              value: "{{ .Values.n8n.password }}"
+          volumeMounts:
+            - mountPath: {{ .Values.n8n.persistence.path }}
+              name: n8n-data
+      volumes:
+        - name: n8n-data
+          persistentVolumeClaim:
+            claimName: n8n-pvc
