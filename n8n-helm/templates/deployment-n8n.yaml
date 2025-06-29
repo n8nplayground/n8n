@@ -12,33 +12,39 @@ spec:
       labels:
         app: n8n
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox
+        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+
       containers:
         - name: n8n
-          image: "{{ .Values.n8n.image }}:{{ .Values.n8n.tag }}"
+          image: {{ .Values.n8n.image }}:{{ .Values.n8n.tag }}
           ports:
             - containerPort: {{ .Values.n8n.port }}
           env:
             - name: DB_TYPE
               value: postgresdb
             - name: DB_POSTGRESDB_HOST
-              value: postgres
+              value: {{ .Values.postgres.host }}
             - name: DB_POSTGRESDB_PORT
               value: "{{ .Values.postgres.port }}"
             - name: DB_POSTGRESDB_DATABASE
-              value: "{{ .Values.postgres.db }}"
+              value: {{ .Values.postgres.database }}
             - name: DB_POSTGRESDB_USER
-              value: "{{ .Values.postgres.user }}"
+              value: {{ .Values.postgres.user }}
             - name: DB_POSTGRESDB_PASSWORD
-              value: "{{ .Values.postgres.password }}"
-            - name: N8N_BASIC_AUTH_ACTIVE
+              value: {{ .Values.postgres.password }}
+            - name: N8N_PORT
+              value: "{{ .Values.n8n.port }}"
+            - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
               value: "true"
-            - name: N8N_BASIC_AUTH_USER
-              value: "{{ .Values.n8n.username }}"
-            - name: N8N_BASIC_AUTH_PASSWORD
-              value: "{{ .Values.n8n.password }}"
+            - name: N8N_SKIP_DATABASE_INIT
+              value: "false"
+
           volumeMounts:
-            - mountPath: {{ .Values.n8n.persistence.path }}
-              name: n8n-data
+            - name: n8n-data
+              mountPath: {{ .Values.n8n.mountPath }}
       volumes:
         - name: n8n-data
           persistentVolumeClaim:

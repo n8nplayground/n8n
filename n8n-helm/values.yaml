@@ -1,20 +1,17 @@
 n8n:
   image: n8nio/n8n
   tag: latest
-  username: admin
-  password: adminpass
-  host: localhost
   port: 5678
-  encryptionKey: my-very-secure-static-key
-  persistence:
-    enabled: true
-    size: 1Gi
-    path: /home/node/.n8n
+  mountPath: /home/node/.n8n
+  volumePath: /mnt/data/n8n
 
 postgres:
   image: postgres
-  tag: 14
-  user: n8n
-  password: n8npass
-  db: n8ndb
+  tag: 17
   port: 5432
+  database: n8ndb
+  host: postgres
+  user: n8n
+  mountPath: /var/lib/postgresql/data
+  volumePath: /mnt/data/postgres
+  password: n8npass

@@ -8,4 +8,5 @@ spec:
     app: n8n
   ports:
     - port: {{ .Values.n8n.port }}
+      targetPort: {{ .Values.n8n.port }}
       nodePort: 30080
