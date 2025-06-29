@@ -1,56 +1,75 @@
-# n8n + PostgreSQL Helm Kurulumu (Windows 11 + WSL2 + Minikube + Helm)
+# n8n + PostgreSQL Helm Deployment on Minikube (Windows + WSL)
 
-Bu rehber, Windows 11 üzerinde WSL2 kullanarak Minikube ortamında `n8n` ve `PostgreSQL` servislerinin Helm chart ile **persistent volume (PV)** desteğiyle nasıl kurulacağını ve karşılaşılan problemlerin nasıl çözüleceğini adım adım açıklar.
+## 💡 Overview
 
----
+This setup runs `n8n` and `PostgreSQL` in a Minikube cluster inside **WSL (Windows Subsystem for Linux)** with **persistent volumes**. You will:
 
-## 💡 Gereksinimler
-
-* Windows 11
-* WSL2 (Ubuntu tavsiye edilir)
-* Docker Desktop (WSL entegrasyonu açık)
-* Helm
-* Minikube
-* `kubectl`
+* Configure storage inside WSL (not Windows NTFS)
+* Run Minikube with custom resources
+* Mount hostPath volumes
+* Create custom Helm chart for both containers
+* Fix permission issues on PostgreSQL volume
 
 ---
 
-## 📦 Adım 1: Minikube Ortamı Hazırlığı
+## 🧱 Folder Structure
 
-### WSL klasör yapısı oluştur
+Place everything under:
+
+```bash
+/home/ahmetserdargeze/minikube-storage
+├── n8n
+└── postgres
+```
+
+Create folders with:
 
 ```bash
 mkdir -p ~/minikube-storage/n8n
 mkdir -p ~/minikube-storage/postgres
 ```
 
-> Bu klasörler persistent volume olarak mount edilecektir. Windows sürücüsü yerine **WSL dosya sistemi kullanılmalıdır** (NTFS izin hatası verir).
-
-### İzinleri düzelt
+Set proper permissions for PostgreSQL:
 
 ```bash
 sudo chown -R 999:999 ~/minikube-storage/postgres
-sudo chmod -R 700 ~/minikube-storage/postgres
-
-sudo mkdir -p ~/minikube-storage/n8n
-sudo chown -R 1000:1000 ~/minikube-storage/n8n
+chmod -R 700 ~/minikube-storage/postgres
 ```
 
 ---
 
-## 🚀 Adım 2: Minikube Başlatma
+## 🚀 Minikube Setup
 
 ```bash
-minikube start --cpus=6 --memory=12288 --mount --mount-string="$HOME/minikube-storage:/mnt/data"
+minikube start \
+  --cpus=6 \
+  --memory=12288 \
+  --driver=docker \
+  --mount \
+  --mount-string="/home/ahmetserdargeze/minikube-storage:/mnt/data"
 ```
 
-> `--mount-string` ile WSL içindeki volume'ler Minikube'a `/mnt/data` olarak aktarılır.
+> Ensure you’re in WSL (Ubuntu) and not using NTFS paths.
 
 ---
 
-## 🛠️ Adım 3: Helm Chart Yapılandırması
+## 📁 Helm Chart Setup
 
-### `values.yaml` örneği
+Your Helm chart structure (e.g., `n8n-helm-chart/`) should look like:
+
+```bash
+n8n-helm-chart/
+├── charts
+├── templates
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── pvc.yaml
+│   └── pv.yaml
+├── values.yaml
+└── Chart.yaml
+```
+
+### 📄 values.yaml
 
 ```yaml
 n8n:
@@ -62,7 +81,7 @@ n8n:
 
 postgres:
   image: postgres
-  tag: 17
+  tag: latest
   port: 5432
   database: n8ndb
   host: postgres
@@ -72,196 +91,130 @@ postgres:
   volumePath: /mnt/data/postgres
 ```
 
----
+### 🧩 Install with Helm
 
-## 📁 Adım 4: PersistentVolume ve PersistentVolumeClaim
-
-### `postgres-pv.yaml`
-
-```yaml
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-spec:
-  capacity:
-    storage: 1Gi
-  accessModes:
-    - ReadWriteOnce
-  hostPath:
-    path: /mnt/data/postgres
-  persistentVolumeReclaimPolicy: Retain
-```
-
-### `postgres-pvc.yaml`
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-```
-
----
-
-## 🧱 Adım 5: PostgreSQL Deployment
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      securityContext:
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
-      containers:
-        - name: postgres
-          image: {{ .Values.postgres.image }}:{{ .Values.postgres.tag }}
-          ports:
-            - containerPort: {{ .Values.postgres.port }}
-          env:
-            - name: POSTGRES_USER
-              value: {{ .Values.postgres.username }}
-            - name: POSTGRES_PASSWORD
-              value: {{ .Values.postgres.password }}
-            - name: POSTGRES_DB
-              value: {{ .Values.postgres.database }}
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: {{ .Values.postgres.mountPath }}
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
-```
-
----
-
-## 🧹 Adım 6: n8n Deployment
-
-### Init Container ile Postgres hazır bekletmesi
-
-```yaml
-initContainers:
-  - name: wait-for-postgres
-    image: busybox
-    command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
-```
-
----
-
-## 🔁 Adım 7: Uygulamaları Yükleme
+Run the following command inside the chart directory:
 
 ```bash
-kubectl apply -f postgres-pv.yaml
-kubectl apply -f postgres-pvc.yaml
-helm upgrade --install n8n ./n8n-helm -f values.yaml
+helm install n8n-stack . -f values.yaml
+```
+
+To upgrade:
+
+```bash
+helm upgrade n8n-stack . -f values.yaml
+```
+
+To uninstall:
+
+```bash
+helm uninstall n8n-stack
 ```
 
 ---
 
-## 🛠️ Karşılaşılan Hatalar ve Çözümleri
+## 🐘 PostgreSQL Issues
 
-### ❌ `chmod: changing permissions of '/var/lib/postgresql/data': Operation not permitted`
+### ❌ `Operation not permitted` or `invalid permissions`
 
-**Sebep:** NTFS veya root olmayan klasör izin problemi.
+```bash
+initdb: error: could not change permissions of directory "/var/lib/postgresql/data"
+FATAL: data directory has invalid permissions
+```
 
-**Çözüm:**
+✅ Solution:
 
 ```bash
 sudo chown -R 999:999 ~/minikube-storage/postgres
 chmod -R 700 ~/minikube-storage/postgres
 ```
 
----
-
 ### ❌ `role "n8n" does not exist`
 
-**Sebep:** PVC klasörü silinmeden deployment tekrarlandı → `initdb` çalışmadı.
+PostgreSQL doesn’t auto-create roles. Ensure the Helm chart sets `POSTGRES_USER=n8n` and PVC is clean.
 
-**Çözüm:**
+To re-init:
 
 ```bash
-kubectl delete pod -l app=postgres
 kubectl delete pvc postgres-pvc
 kubectl delete pv postgres-pv
-sudo rm -rf ~/minikube-storage/postgres/*
+rm -rf ~/minikube-storage/postgres/*
 ```
 
 ---
 
-### ❌ n8n `Completed` oluyor
+## 🌐 Access n8n UI
 
-**Sebep:** Postgres'e bağlanamadan çıkıyor.
-
-**Çözüm:**
-
-* Init container (`wait-for-postgres`) ekle.
-* DB bilgileri `values.yaml` ile tam uyumlu olmalı.
-
----
-
-## 🌐 n8n Arayüzünüze Erişim
+Expose via `NodePort` or port-forward:
 
 ```bash
-minikube service n8n --url
+kubectl port-forward svc/n8n-service 5678:5678
 ```
 
-> Çıkan URL’yi tarayıcıda açabilirsiniz: `http://<minikube-ip>:5678`
+Open: [http://localhost:5678](http://localhost:5678)
+
+You can also enable port-forwarding with Docker for GUI access via Minikube:
+
+```bash
+docker run -d -p 5678:5678 --name n8n-ui-proxy alpine/socat tcp-listen:5678,fork,reuseaddr tcp-connect:localhost:5678
+```
+
+> This makes n8n UI available on `localhost:5678` in Windows browser.
 
 ---
 
-## ♻️ Minikube Yeniden Başlatma
+## ✅ Post-Install Check
+
+```bash
+kubectl get pods
+kubectl logs deploy/n8n
+kubectl logs deploy/postgres
+```
+
+All logs should show ready and connections working. If you see:
+
+```
+relation "public.execution_entity" does not exist
+```
+
+That’s expected on first startup. n8n will create its DB schema.
+
+---
+
+## 🛑 Minikube Restart (to preserve data)
 
 ```bash
 minikube stop
-minikube start --mount --mount-string="$HOME/minikube-storage:/mnt/data"
+minikube start \
+  --cpus=6 \
+  --memory=12288 \
+  --driver=docker \
+  --mount \
+  --mount-string="/home/ahmetserdargeze/minikube-storage:/mnt/data"
 ```
 
-Helm chart güncellemesi için:
-
-```bash
-helm upgrade --install n8n ./n8n-helm -f values.yaml
-```
+No need to reinstall chart; the PVCs will be reused.
 
 ---
 
-## ✅ Ekstra Notlar
+## 🛠️ Notes
 
-* Volume mount path her zaman WSL içinde kalmalı.
-* PostgreSQL podu `CrashLoopBackOff` olursa loglara bak: `kubectl logs <postgres-pod>`
+* Never mount volumes from NTFS (e.g., `/mnt/c`) — permissions won’t work.
+* Prefer `/home/username` inside WSL for storage.
+* Use `securityContext` in PostgreSQL deployment:
 
----
-
-## 💜 Temizlik
-
-```bash
-kubectl delete all --all
-kubectl delete pvc --all
-kubectl delete pv --all
-sudo rm -rf ~/minikube-storage/*
+```yaml
+securityContext:
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
 ```
 
----
+* Add init container for n8n:
 
-```
-}
-
+```yaml
+initContainers:
+  - name: wait-for-postgres
+    image: busybox
+    command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
 ```
