@@ -163,6 +163,24 @@ docker run -d -p 5678:5678 --name n8n-ui-proxy alpine/socat tcp-listen:5678,fork
 
 ---
 
+## 🛠️ Port-forward PostgreSQL (Optional)
+
+To access PostgreSQL on Windows (e.g., pgAdmin):
+
+```bash
+kubectl port-forward svc/postgres-service 5432:5432
+```
+
+Alternatively, via Docker + socat:
+
+```bash
+docker run -d -p 5432:5432 --name pg-proxy alpine/socat tcp-listen:5432,fork,reuseaddr tcp-connect:localhost:5432
+```
+
+Then connect via `localhost:5432` in pgAdmin or any DB tool.
+
+---
+
 ## ✅ Post-Install Check
 
 ```bash
@@ -218,3 +236,41 @@ initContainers:
     image: busybox
     command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
 ```
+
+---
+
+## 🔧 Common Kubernetes Commands
+
+### Pod Management
+
+```bash
+kubectl get pods
+kubectl get pods -o wide
+kubectl describe pod <pod-name>
+kubectl delete pod <pod-name>
+```
+
+### Logs
+
+```bash
+kubectl logs <pod-name>
+kubectl logs -f <pod-name>
+kubectl logs -f deployment/<deployment-name>
+```
+
+### Scale Deployments
+
+```bash
+kubectl scale deployment <deployment-name> --replicas=0   # scale down
+kubectl scale deployment <deployment-name> --replicas=1   # scale up
+```
+
+### Restart a Deployment
+
+```bash
+kubectl rollout restart deployment <deployment-name>
+```
+
+---
+
+> This guide helps ensure stable, persistent `n8n + PostgreSQL` setup with proper WSL and Minikube integration.
